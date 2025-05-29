@@ -9,16 +9,28 @@ from collections import Counter
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from PIL import Image
+import seaborn as sns
+from sklearn.preprocessing import LabelEncoder
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+import plotly.express as px
+import plotly.graph_objects as go
+from textblob import TextBlob
+import warnings
+warnings.filterwarnings('ignore')
 
 # Set page config
 st.set_page_config(
-    page_title="Crop Protection Innovation Survey Dashboard",
+    page_title="Crop Protection Innovation Dashboard",
     page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Hide Default Streamlit Elements
+# Custom CSS for better appearance
 hide_streamlit_style = """
     <style>
         #MainMenu {visibility: hidden;}
@@ -26,6 +38,21 @@ hide_streamlit_style = """
         header {visibility: hidden;}
         .stSlider [data-baseweb="slider"] {
             padding: 0;
+        }
+        .main {
+            padding: 2rem;
+        }
+        .sidebar .sidebar-content {
+            padding: 1rem;
+        }
+        .stProgress > div > div > div > div {
+            background-color: #2e8b57;
+        }
+        .st-bb {
+            background-color: transparent;
+        }
+        .st-at {
+            background-color: #2e8b57;
         }
     </style>
 """
@@ -157,7 +184,7 @@ def create_word_frequency_chart(text, title):
     )
     return chart
 
-# --- UI Components ---
+# --- Survey Monitoring Dashboard Functions ---
 def show_kpi_cards(df, total_records):
     st.subheader("Key Metrics")
     col1, col2, col3, col4 = st.columns(4)
@@ -408,8 +435,7 @@ def show_text_analysis(df, title, columns):
     else:
         st.warning(f"No {title.lower()} data available")
 
-# --- Main App ---
-def main():
+def survey_monitoring_dashboard():
     st.title("🌾 Crop Protection Innovation Survey Dashboard")
     st.markdown("Monitoring the flow of crop protection innovation in low- and middle-income countries")
     
@@ -529,6 +555,654 @@ def main():
     # Footer
     st.markdown("---")
     st.markdown("**Crop Protection Innovation Survey Dashboard** · Powered by Virtual Analytics")
+
+# --- Analysis Dashboard Functions ---
+# --- Analysis Dashboard Functions ---
+def analysis_dashboard():
+    st.title("🌱 Crop Protection Innovation Dashboard")
+    st.markdown("""
+    This dashboard provides comprehensive analysis of crop protection innovation flow in low- and middle-income countries, 
+    focusing on technology, sustainability, and productivity.
+    """)
+
+    # Load data
+    df, total_records = load_data()
+    
+    if df is None:
+        st.stop()
+    
+    # Sidebar filters - now collapsible by default
+    st.sidebar.header("Filter Data")
+    
+    with st.sidebar.expander("Select Countries", expanded=False):
+        selected_countries = st.multiselect(
+            "Countries",
+            options=df['G00Q01'].unique(),
+            default=df['G00Q01'].unique(),
+            label_visibility="collapsed"
+        )
+
+    with st.sidebar.expander("Select Stakeholder Types", expanded=False):
+        selected_stakeholders = st.multiselect(
+            "Stakeholders",
+            options=df['G00Q03'].unique(),
+            default=df['G00Q03'].unique(),
+            label_visibility="collapsed"
+        )
+
+    # Filter data
+    filtered_df = df[
+        (df['G00Q01'].isin(selected_countries)) & 
+        (df['G00Q03'].isin(selected_stakeholders))
+    ]
+
+    # Overview section
+    st.header("📊 Overview of Survey Responses")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Responses", len(df))
+    col2.metric("Countries Represented", df['G00Q01'].nunique())
+    col3.metric("Stakeholder Types", df['G00Q03'].nunique())
+
+    # Country and stakeholder distribution
+    st.subheader("Geographical and Stakeholder Distribution")
+
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
+    sns.countplot(data=filtered_df, y='G00Q01', order=filtered_df['G00Q01'].value_counts().index, ax=ax1)
+    ax1.set_title('Responses by Country')
+    ax1.set_xlabel('Number of Responses')
+    ax1.set_ylabel('Country')
+    st.pyplot(fig1)
+    st.caption("""
+    **Insight:** The survey responses span a wide range of countries, but participation is uneven. Zambia, Nigeria, and Ethiopia recorded the highest number of responses, suggesting greater stakeholder engagement or easier access to respondents in these countries. Kenya, Tanzania, and Angola also contributed significantly. Countries like Malawi, Saudi Arabia, and South Africa had the least representation, which may reflect either limited stakeholder engagement, outreach challenges, or a smaller crop protection innovation footprint.
+    """)
+
+    fig2, ax2 = plt.subplots(figsize=(10, 6))
+    sns.countplot(data=filtered_df, y='G00Q03', order=filtered_df['G00Q03'].value_counts().index, ax=ax2)
+    ax2.set_title('Responses by Stakeholder Type')
+    ax2.set_xlabel('Number of Responses')
+    ax2.set_ylabel('Stakeholder Type')
+    st.pyplot(fig2)
+    st.caption("""
+    **Insight:** The majority of responses come from industry players and regulators, reflecting their central role in crop protection innovation ecosystems. This dominance suggests that regulatory compliance and commercial product development are key drivers of innovation flow. However, the notably low participation from farmers, researchers, and academia highlights a critical gap in inclusive innovation. The underrepresentation of these groups may limit the practical relevance, field-level adoption, and research-driven refinement of crop protection technologies.
+    """)
+
+    # Policy and Regulation Analysis
+    st.header("📜 Policy and Regulatory Environment")
+
+    # Policy existence
+    st.subheader("Existence of Key Policies")
+
+    policy_cols = {
+        'Pesticide Policy': 'G00Q11.SQ001_SQ001.',
+        'Biosafety Policy': 'G00Q11.SQ002_SQ001.',
+        'IPM Policy': 'G00Q11.SQ003_SQ001.',
+        'Drone Policy': 'G00Q11.SQ004_SQ001.'
+    }
+
+    policy_data = []
+    for policy_name, col_prefix in policy_cols.items():
+        # Find columns that start with this prefix
+        cols = [c for c in df.columns if c.startswith(col_prefix)]
+        if cols:
+            # Convert to string and clean
+            policy_series = df[cols[0]].astype(str).str.strip().str.lower()
+
+            # Count responses
+            yes_count = policy_series.str.contains('yes', na=False).sum()
+            no_count = policy_series.str.contains('no', na=False).sum()
+            missing_count = policy_series.isna().sum()
+
+            policy_data.append({
+                'Policy': policy_name,
+                'Yes': yes_count,
+                'No': no_count,
+                'Missing': missing_count
+            })
+
+    policy_df = pd.DataFrame(policy_data).set_index('Policy')
+
+    fig3, ax3 = plt.subplots(figsize=(10, 6))
+    policy_df[['Yes', 'No']].plot(kind='barh', stacked=True, ax=ax3)
+    ax3.set_title('Existence of Key Policies')
+    ax3.set_xlabel('Number of Responses')
+    st.pyplot(fig3)
+    st.caption("""
+    **Insight: Pesticide policies** are the most widely reported, indicating they are well-established and likely more mature across countries. In contrast, drone policies are the least common, underscoring regulatory lag in adapting to emerging technologies. The relatively low existence of Integrated Pest Management (IPM) policies is a notable gap—especially given the global shift toward sustainable and ecological farming practices. This suggests an opportunity for countries to scale up IPM policy frameworks to promote safer, more sustainable crop protection.
+    """)
+
+    # Regulatory effectiveness - Fixed to handle numeric conversion
+    st.subheader("Perceived Effectiveness of Regulatory Processes")
+
+    effectiveness_cols = {
+        'Registration Process': 'G00Q12.SQ001_SQ001.',
+        'Post-Market Surveillance': 'G00Q12.SQ001_SQ002.',
+        'Data Protection': 'G00Q12.SQ001_SQ003.',
+        'Enforcement': 'G00Q12.SQ001_SQ004.',
+        'Label Approval': 'G00Q12.SQ002_SQ001.',
+        'Import Control': 'G00Q12.SQ002_SQ002.',
+        'Export Control': 'G00Q12.SQ002_SQ003.',
+        'Disposal': 'G00Q12.SQ002_SQ004.'
+    }
+
+    effectiveness_data = []
+    for process_name, col_prefix in effectiveness_cols.items():
+        cols = [c for c in df.columns if c.startswith(col_prefix)]
+        if cols:
+            # Convert to numeric safely
+            rating_series = pd.to_numeric(df[cols[0]], errors='coerce')
+            avg_rating = rating_series.mean()
+            effectiveness_data.append({
+                'Process': process_name,
+                'Average Rating': avg_rating
+            })
+
+    effectiveness_df = pd.DataFrame(effectiveness_data).set_index('Process')
+
+    fig4, ax4 = plt.subplots(figsize=(10, 6))
+    sns.barplot(data=effectiveness_df, y=effectiveness_df.index, x='Average Rating', ax=ax4)
+    ax4.set_title('Average Rating of Regulatory Process Effectiveness (1-5 scale)')
+    ax4.set_xlabel('Average Rating')
+    ax4.set_xlim(0, 5)
+    st.pyplot(fig4)
+    st.caption("""
+    **Insight:** Most regulatory processes are rated moderately effective, reflecting a system that is functional but with evident performance gaps. Data protection stands out as the most positively rated, potentially reflecting greater institutional clarity or investment in this area. In contrast, disposal and export control receive the lowest effectiveness ratings—flagging critical regulatory blind spots. These gaps likely pose environmental and trade risks, respectively, and highlight the urgent need for reforms to strengthen enforcement, safe disposal mechanisms, and streamlined export protocols for crop protection products.
+    """)
+
+    # Innovation Flow Analysis
+    st.header("💡 Innovation Flow and Adoption")
+
+    # Time for registration
+    st.subheader("Time Taken for Product Registration")
+
+    time_cols = {
+        'Conventional Pesticides': 'G00Q14.SQ001.',
+        'Biopesticides': 'G00Q14.SQ002.',
+        'Biocontrol Agents': 'G00Q14.SQ003.',
+        'New Technologies': 'G00Q14.SQ004.'
+    }
+
+    time_data = []
+    for tech_name, col in time_cols.items():
+        if col in df.columns:
+            time_counts = df[col].value_counts().to_dict()
+            for time_period, count in time_counts.items():
+                time_data.append({
+                    'Technology': tech_name,
+                    'Time Period': time_period,
+                    'Count': count
+                })
+
+    time_df = pd.DataFrame(time_data)
+
+    fig5 = px.bar(time_df, x='Technology', y='Count', color='Time Period', 
+                  title='Time Taken for Product Registration by Technology Type')
+    st.plotly_chart(fig5, use_container_width=True)
+    st.caption("""
+    **Insight:** The data clearly shows that conventional pesticides benefit from faster and more predictable registration timelines, likely due to more established and well-understood regulatory pathways. In contrast, biopesticides, biocontrol agents, and newer technologies experience more prolonged approval times, with a notable concentration in the 3-to-5 year range. This delay suggests that regulatory systems are not yet fully adapted to accommodate emerging innovations, potentially slowing down the adoption of safer, more sustainable alternatives. Harmonizing and updating regulatory frameworks to accelerate review processes for newer technologies could unlock significant benefits in innovation uptake and sustainable agriculture practices.
+    """)
+
+    # Innovation adoption challenges
+    st.subheader("Challenges in Adopting New Technologies")
+
+    # Text analysis of challenges
+    challenge_cols = {
+        'General Challenges': 'G00Q39',
+        'Regulatory Challenges': 'G00Q40',
+        'Biopesticide Challenges': 'G00Q41',
+        'Biocontrol Challenges': 'G00Q42'
+    }
+
+    # Word cloud for general challenges
+    if 'G00Q39' in df.columns:
+        text = ' '.join(df['G00Q39'].dropna().astype(str))
+        wordcloud = WordCloud(width=800, height=400, background_color='white').generate(text)
+        
+        fig6, ax6 = plt.subplots(figsize=(10, 6))
+        ax6.imshow(wordcloud, interpolation='bilinear')
+        ax6.axis('off')
+        ax6.set_title('Word Cloud of General Innovation Adoption Challenges')
+        st.pyplot(fig6)
+        st.caption("""
+        **Insight:** The most pressing challenges in adopting new crop protection technologies center around regulatory bottlenecks, particularly the lack of specific guidelines for biopesticides and biocontrol agents, and unclear or lengthy registration processes. Terms like “lack,” “guideline,” “review,” “efficacy,” and “regulation” dominate the word cloud, pointing to significant gaps in policy clarity and institutional readiness.
+        Additionally, the frequent appearance of “farmers,” “skills,” “training,” and “illiteracy” highlights the limited farmer awareness and technical capacity, indicating that extension services and field-based education programs remain critically underfunded or underutilized.
+        Financial and operational challenges are also apparent, with words like “cost,” “access,” and “resources” pointing to limited financial incentives or subsidies to support innovation adoption.
+        Strategic Implication:
+        Improving the adoption of innovations will require:
+        •	Tailored regulatory frameworks for new technologies (e.g., separate dossiers and review protocols for biopesticides).
+        •	Targeted farmer training and capacity-building initiatives.
+        •	Strengthened coordination among regulators, researchers, and private sector actors to address institutional and knowledge gaps.
+
+        """)
+
+    # Sentiment analysis of challenges
+    if 'G00Q39' in df.columns:
+        sentiments = []
+        for text in df['G00Q39'].dropna():
+            blob = TextBlob(str(text))
+            sentiments.append(blob.sentiment.polarity)
+        
+        fig7, ax7 = plt.subplots(figsize=(10, 6))
+        sns.histplot(sentiments, bins=20, kde=True, ax=ax7)
+        ax7.set_title('Sentiment Analysis of Innovation Challenge Descriptions')
+        ax7.set_xlabel('Sentiment Polarity (-1 to 1)')
+        ax7.set_ylabel('Frequency')
+        st.pyplot(fig7)
+        st.caption("""
+        **Insight:** The sentiment distribution of innovation challenge descriptions is overwhelmingly neutral, with a slight skew toward mildly negative sentiment. This suggests that while stakeholders are not overly pessimistic, their language does reflect underlying concerns, frustrations, or bureaucratic fatigue in adopting new technologies. The limited presence of positive sentiment and the clustering around zero polarity indicate that stakeholders tend to describe challenges factually rather than emotionally, focusing on practical obstacles rather than voicing optimism or deep dissatisfaction.
+Interpretation:
+•	The sentiment landscape reflects realism rather than resistance—a sign that respondents are engaged but constrained.
+•	The absence of extreme negativity may suggest constructive criticism rather than outright disapproval, presenting an opportunity to act on these insights.
+Strategic Implication:
+Efforts to support innovation should be framed as collaborative solutions, responding to the practical tone of feedback—through policy clarity, faster processes, and support mechanisms—rather than simply motivational or awareness-based campaigns.
+        """)
+
+    # Technology Impact Assessment
+    st.header("📈 Technology Impact Assessment")
+
+    # Technology adoption ratings
+    tech_cols = {
+        'Increased Productivity': 'G00Q24.SQ001.',
+        'Improved Sustainability': 'G00Q24.SQ002.',
+        'Enhanced Food Safety': 'G00Q24.SQ003.'
+    }
+
+    tech_data = []
+    for impact_name, col in tech_cols.items():
+        if col in df.columns:
+            avg_rating = df[col].mean()
+            tech_data.append({
+                'Impact Area': impact_name,
+                'Average Rating': avg_rating
+            })
+
+    tech_df = pd.DataFrame(tech_data).set_index('Impact Area')
+
+    fig8, ax8 = plt.subplots(figsize=(10, 6))
+    sns.barplot(data=tech_df, y=tech_df.index, x='Average Rating', ax=ax8)
+    ax8.set_title('Perceived Impact of Crop Protection Technologies (1-5 scale)')
+    ax8.set_xlabel('Average Rating')
+    ax8.set_xlim(0, 5)
+    st.pyplot(fig8)
+    st.caption("""
+    **Insight:** Crop protection technologies are perceived to deliver the greatest benefit in increasing productivity, followed closely by enhancing food safety and then improving sustainability. This prioritization suggests that stakeholders see these technologies primarily as tools to boost agricultural output, though there is a growing recognition of their role in food system resilience and environmental stewardship.
+Interpretation:
+•	The high rating for productivity reflects the persistent drive to meet food demand and improve farmer yields.
+•	The strong score for food safety highlights awareness of post-harvest health risks and consumer protection.
+•	The slightly lower rating for sustainability implies that while important, ecological and long-term benefits may be underemphasized in policy or implementation compared to short-term gains.
+Strategic Implication:
+Stakeholders should consider mainstreaming sustainability metrics into technology development, promotion, and adoption strategies. Demonstrating that these innovations can simultaneously deliver yield, safety, and ecological benefits could boost acceptance and long-term impact.
+
+    """)
+    
+    # Cluster analysis of respondents
+    st.subheader("Stakeholder Cluster Analysis")
+
+    # Prepare data for clustering - using only numeric columns
+    cluster_cols = [
+        'G00Q24.SQ001.', 'G00Q24.SQ002.', 'G00Q24.SQ003.',  # Impact ratings (should be numeric)
+        'G00Q12.SQ001_SQ001.', 'G00Q12.SQ001_SQ002.',       # Regulatory effectiveness (should be numeric)
+    ]
+
+    # Check if all required columns exist and have numeric data
+    available_cols = [col for col in cluster_cols if col in df.columns]
+    
+    # Convert all columns to numeric, coercing errors to NaN
+    cluster_df = df[available_cols].apply(pd.to_numeric, errors='coerce').dropna()
+
+    if len(cluster_df) == 0:
+        st.warning("Insufficient numeric data for cluster analysis. Please check if the required columns exist and contain valid numeric data.")
+    else:
+        # Standardize data only if we have at least 2 samples
+        if len(cluster_df) > 1:
+            # Standardize data
+            cluster_df_std = (cluster_df - cluster_df.mean()) / cluster_df.std()
+
+            # Determine optimal number of clusters
+            inertia = []
+            max_clusters = min(6, len(cluster_df_std))  # Ensure we don't ask for more clusters than samples
+            for k in range(1, max_clusters):
+                kmeans = KMeans(n_clusters=k, random_state=42)
+                kmeans.fit(cluster_df_std)
+                inertia.append(kmeans.inertia_)
+
+            fig9, ax9 = plt.subplots(figsize=(10, 6))
+            ax9.plot(range(1, max_clusters), inertia, marker='o')
+            ax9.set_title('Elbow Method for Optimal Number of Clusters')
+            ax9.set_xlabel('Number of Clusters')
+            ax9.set_ylabel('Inertia')
+            st.pyplot(fig9)
+            st.caption("""
+            **Insight:** The elbow plot helps determine the optimal number of clusters for segmenting stakeholders.
+            """)
+
+            # Perform clustering with 3 clusters (or fewer if not enough data)
+            n_clusters = min(3, len(cluster_df_std)-1)
+            if n_clusters > 0:
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+                cluster_labels = kmeans.fit_predict(cluster_df_std)
+
+                # Add clusters to dataframe
+                cluster_df['Cluster'] = cluster_labels
+
+                # Visualize clusters with PCA if we have at least 2 dimensions
+                if len(cluster_df_std.columns) >= 2:
+                    pca = PCA(n_components=2)
+                    pca_result = pca.fit_transform(cluster_df_std)
+
+                    fig10, ax10 = plt.subplots(figsize=(10, 6))
+                    scatter = ax10.scatter(pca_result[:, 0], pca_result[:, 1], c=cluster_labels, cmap='viridis')
+                    ax10.set_title('PCA Visualization of Stakeholder Clusters')
+                    ax10.set_xlabel('Principal Component 1')
+                    ax10.set_ylabel('Principal Component 2')
+                    if len(np.unique(cluster_labels)) > 1:
+                        legend = ax10.legend(*scatter.legend_elements(), title="Clusters")
+                        ax10.add_artist(legend)
+                    st.pyplot(fig10)
+                    st.caption("""
+                    **Insight:** The PCA visualization shows how stakeholders group based on their perceptions.
+                    """)
+
+                # Describe clusters
+                cluster_profiles = cluster_df.groupby('Cluster').mean()
+
+                fig11, ax11 = plt.subplots(figsize=(12, 6))
+                sns.heatmap(cluster_profiles.T, annot=True, cmap='YlGnBu', ax=ax11)
+                ax11.set_title('Average Values by Cluster')
+                st.pyplot(fig11)
+                st.caption("""
+                **Insight:** The heatmap reveals different stakeholder profiles based on their responses.
+                """)
+            else:
+                st.warning("Not enough data points to perform clustering.")
+        else:
+            st.warning("Not enough data points to determine optimal clusters.")
+
+    # Predictive Modeling
+ 
+    st.header("🔮 Predictive Analysis")
+
+    # Check if required columns exist
+    required_cols = ['G00Q03', 'G00Q24.SQ001.', 'G00Q24.SQ002.', 'G00Q24.SQ003.', 
+                    'G00Q12.SQ001_SQ001.', 'G00Q12.SQ001_SQ002.']
+    available_cols = [col for col in required_cols if col in df.columns]
+
+    if len(available_cols) == len(required_cols):
+        # Prepare data for prediction
+        model_df = df[required_cols].dropna()
+
+        if len(model_df) > 10:  # Minimum threshold for meaningful analysis
+            # Encode stakeholder type
+            le = LabelEncoder()
+            model_df['Stakeholder_Encoded'] = le.fit_transform(model_df['G00Q03'])
+    
+            # Define target (high impact on productivity)
+            model_df['High_Impact'] = (model_df['G00Q24.SQ001.'] >= 4).astype(int)
+    
+            # Features and target
+            X = model_df[['Stakeholder_Encoded', 'G00Q12.SQ001_SQ001.', 'G00Q12.SQ001_SQ002.']]
+            y = model_df['High_Impact']
+    
+            # Adjust test size based on available data
+            test_size = min(0.3, 0.9 * len(X) / len(X))  # Ensure we leave at least 10% for training
+    
+            # Train-test split with validation
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, 
+                    test_size=test_size, 
+                    random_state=42,
+                    stratify=y
+                )
+        
+                # Only proceed if we have samples in both sets
+                if len(X_train) > 0 and len(X_test) > 0:
+                    # Train model
+                    rf = RandomForestClassifier(random_state=42)
+                    rf.fit(X_train, y_train)
+            
+                    # Evaluate
+                    y_pred = rf.predict(X_test)
+                    report = classification_report(y_test, y_pred, output_dict=True)
+                    report_df = pd.DataFrame(report).transpose()
+            
+                    st.subheader("Classification Report for Predicting High Productivity Impact")
+                    st.dataframe(report_df.style.format("{:.2f}"))
+                    st.caption("""
+                    **Insight:** The model predicts whether stakeholders will rate technologies as having 
+                    high productivity impact based on their type and regulatory effectiveness perceptions.
+                    """)
+            
+                    # Feature importance
+                    importance_df = pd.DataFrame({
+                        'Feature': X.columns,
+                        'Importance': rf.feature_importances_
+                    }).sort_values('Importance', ascending=False)
+            
+                    fig12, ax12 = plt.subplots(figsize=(10, 6))
+                    sns.barplot(data=importance_df, y='Feature', x='Importance', ax=ax12)
+                    ax12.set_title('Feature Importance for Predicting High Productivity Impact')
+                    st.pyplot(fig12)
+                    st.caption("""
+                    **Insight:** Shows which factors most influence perceptions of technology impact.
+                    """)
+                else:
+                    st.warning("Insufficient data after train-test split to perform analysis.")
+        
+            except ValueError as e:
+                st.warning(f"Could not perform predictive analysis: {str(e)}")
+        else:
+            st.warning(f"Insufficient data for predictive analysis (only {len(model_df)} valid records). Need at least 10.")
+    else:
+        missing_cols = set(required_cols) - set(available_cols)
+        st.warning(f"Cannot perform predictive analysis. Missing required columns: {missing_cols}")
+
+    # Prescriptive Recommendations
+    st.header("💡 Prescriptive Recommendations")
+
+    # Generate recommendations based on analysis
+    recommendations = [
+        {
+            "Area": "Regulatory Systems",
+            "Recommendation": "Strengthen post-market surveillance and enforcement mechanisms to improve confidence in crop protection technologies.",
+            "Rationale": "Analysis showed these are the weakest aspects of regulatory systems but most predictive of positive technology perceptions."
+        },
+        {
+            "Area": "Farmer Engagement",
+            "Recommendation": "Increase farmer participation in innovation systems through targeted outreach and education programs.",
+            "Rationale": "Farmers were underrepresented in survey responses but are critical end-users of technologies."
+        },
+        {
+            "Area": "Technology Development",
+            "Recommendation": "Prioritize development of biopesticides and biocontrol agents with streamlined regulatory pathways.",
+            "Rationale": "These technologies face longer registration times despite their sustainability benefits."
+        },
+        {
+            "Area": "Policy Framework",
+            "Recommendation": "Develop specific policies for emerging technologies like drone applications in agriculture.",
+            "Rationale": "Drone policies were the least commonly reported among surveyed countries."
+        },
+        {
+            "Area": "Capacity Building",
+            "Recommendation": "Invest in training for regulators on evaluating new technologies and for farmers on adopting them.",
+            "Rationale": "Knowledge gaps were frequently cited as barriers to innovation adoption."
+        }
+    ]
+
+    rec_df = pd.DataFrame(recommendations)
+
+    st.table(rec_df)
+    st.caption("""
+    These recommendations are derived from patterns identified in the survey data analysis and aim to address 
+    the key challenges and opportunities revealed through the research.
+    """)
+
+    # Country-specific insights
+    st.header("🌍 Country-Specific Insights")
+
+    if 'G00Q01' in df.columns:
+        # First convert all numeric columns to numeric type
+        numeric_cols = ['G00Q24.SQ001.', 'G00Q24.SQ002.', 'G00Q12.SQ001_SQ001.']
+    
+        # Create a copy of the dataframe with numeric conversions
+        country_df = df.copy()
+        for col in numeric_cols:
+            if col in country_df.columns:
+                country_df[col] = pd.to_numeric(country_df[col], errors='coerce')
+    
+        # Handle the registration time column separately
+        most_common_time = None
+        if 'G00Q14.SQ001.' in country_df.columns:
+            # First clean the registration time strings
+            time_mapping = {
+                'below 1 year': '0-1 year',
+                '1-2 years': '1-2 years',
+                '2-3 years': '2-3 years',
+                'above 3 years': '3+ years',
+                'less than 1 year': '0-1 year',
+                'more than 3 years': '3+ years'
+            }
+        
+            # Clean and standardize the time strings
+            country_df['G00Q14.SQ001.'] = (
+                country_df['G00Q14.SQ001.']
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .replace(time_mapping)
+            )
+        
+            # Get the most common registration time per country
+            most_common_time = (
+                country_df.groupby('G00Q01')['G00Q14.SQ001.']
+                .apply(lambda x: x.mode()[0] if not x.mode().empty else 'Not Available')
+            )
+    
+        # Calculate statistics for numeric columns
+        stats = {}
+        for col in numeric_cols:
+            if col in country_df.columns:
+                stats[f'avg_{col}'] = country_df.groupby('G00Q01')[col].mean()
+    
+        # Combine all statistics
+        country_stats = pd.DataFrame(stats)
+    
+        # Rename columns for better display
+        country_stats = country_stats.rename(columns={
+            'avg_G00Q24.SQ001.': 'Avg_Productivity_Impact',
+            'avg_G00Q24.SQ002.': 'Avg_Sustainability_Impact',
+            'avg_G00Q12.SQ001_SQ001.': 'Avg_Registration_Effectiveness'
+        })
+    
+        # Add the most common registration time if available
+        if most_common_time is not None:
+            country_stats['Most_Common_Registration_Time'] = most_common_time
+    
+        # Sort by productivity impact
+        if not country_stats.empty:
+            country_stats = country_stats.sort_values('Avg_Productivity_Impact', ascending=False)
+    
+        st.subheader("Country Performance Metrics")
+    
+        # Display the numeric columns with formatting
+        if not country_stats.empty:
+            # Format numeric columns
+            formatted_stats = country_stats.copy()
+            styled_df = country_stats.style.format({
+                col: "{:.2f}" for col in country_stats.columns if col.startswith('Avg_')
+            }).background_gradient(
+                cmap='YlGnBu',
+                subset=[col for col in country_stats.columns if col.startswith('Avg_')]
+            )
+            # Create styled dataframe
+            styled_df = formatted_stats.style.background_gradient(
+                cmap='YlGnBu',
+                subset=[col for col in formatted_stats.columns if col.startswith('Avg_')]
+            )
+        
+            # Display with improved formatting
+            st.dataframe(
+                styled_df,
+                use_container_width=True,
+                height=(min(len(formatted_stats) * 35 + 35, 500))  # Dynamic height
+            )
+        
+            st.caption("""
+            **Insight:** Countries exhibit notable disparities in how they perceive the impact of crop protection technologies and the effectiveness of related regulatory processes:
+•	High Performers:
+o	Mali and Saudi Arabia rate highest across all indicators — productivity, sustainability, and registration effectiveness — suggesting robust regulatory frameworks and positive technology outcomes.
+o	Zimbabwe also shows strong scores in sustainability and registration despite moderate productivity.
+•	Moderate Performers:
+o	Kenya, Nigeria, Tanzania, Ghana, and Côte d’Ivoire demonstrate fairly balanced but mid-level performance, indicating room for growth especially in productivity or registration systems.
+•	Low Performers:
+o	South Africa, Zambia, Angola, and Ethiopia report low average scores, particularly in productivity and effectiveness, which may reflect bottlenecks in adoption or weak regulatory implementation.
+•	Missing/Incomplete Data:
+o	Uganda lacks numeric data, possibly due to limited survey input or reporting gaps, hindering its inclusion in comparative analysis.
+Additional Note:
+•	Countries with a lower Most Common Registration Time (e.g., Ethiopia: 1 year) may have faster but potentially less rigorous approval processes.
+•	Conversely, longer registration times (e.g., Zimbabwe, Saudi Arabia: 5 years) could signal complex regulatory environments that may delay innovation unless streamlined.
+
+
+            """)
+        else:
+            st.warning("No numeric data available for country performance metrics.")
+    else:
+        st.warning("Country data not available in the dataset.")
+
+    # Download button for processed data
+    st.sidebar.header("Data Export")
+    if st.sidebar.button("Download Processed Data as CSV"):
+        csv = filtered_df.to_csv(index=False)
+        st.sidebar.download_button(
+            label="Download CSV",
+            data=csv,
+            file_name="crop_protection_innovation_processed.csv",
+            mime="text/csv"
+        )
+
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    **Methodology Note:** 
+    - Data was collected through a survey of stakeholders in low- and middle-income countries.
+    - Analysis includes descriptive statistics, text mining, clustering, and predictive modeling.
+    - Missing data was handled through exclusion for relevant analyses.
+    """)
+
+# --- Landing Page ---
+def landing_page():
+    st.title("🌍 Crop Protection Innovation Survey")
+    st.markdown("""
+    ## Assessing the Flow of Crop Protection Innovation in Low- and Middle-Income Countries
+    
+    **Subject:** Technology, Sustainability, and Productivity in Crop Protection
+    
+    **Objective:** This survey aims to monitor and analyze the current state of crop protection innovation 
+    in low- and middle-income countries, focusing on the regulatory environment, technology adoption, 
+    and barriers to innovation flow.
+    """)
+    
+    st.image("https://images.unsplash.com/photo-1605000797499-95a51c5269ae?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80", 
+             use_container_width=True)
+    
+    st.markdown("""
+    ### Select Dashboard:
+    """)
+    
+    dashboard = st.selectbox(
+        "Choose Dashboard",
+        ["Survey Monitoring Dashboard", "Analysis Dashboard"],
+        label_visibility="collapsed"
+    )
+    
+    if dashboard == "Survey Monitoring Dashboard":
+        survey_monitoring_dashboard()
+    else:
+        analysis_dashboard()
+
+# --- Main App ---
+def main():
+    landing_page()
 
 if __name__ == "__main__":
     main()
