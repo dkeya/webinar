@@ -7,3 +7,7 @@ geopandas
 plotly
 openpyxl
 WordCloud
+streamlit
+pandas
+matplotlib
+seaborn
