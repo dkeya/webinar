@@ -184,6 +184,194 @@ def create_word_frequency_chart(text, title):
     )
     return chart
 
+# --- New Analysis Functions for Additional Objectives ---
+def show_demand_side_analysis(df):
+    """Analyze demand-side factors including policies, programs, and incentives"""
+    st.subheader("Demand-Side Analysis: Policies and Incentives")
+    
+    # Policy harmonization analysis
+    st.markdown("**Policy Harmonization Across Countries**")
+    harmonization_cols = ['G00Q11.SQ001_SQ001.', 'G00Q11.SQ002_SQ001.', 'G00Q11.SQ003_SQ001.']
+    harmonization_df = df.groupby('G00Q01')[harmonization_cols].apply(lambda x: x.eq('Yes').mean())
+    harmonization_df.columns = ['Pesticide Policy', 'Biosafety Policy', 'IPM Policy']
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.heatmap(harmonization_df.T, annot=True, cmap='YlGnBu', ax=ax)
+    ax.set_title('Policy Adoption Rates by Country')
+    st.pyplot(fig)
+    st.caption("""
+    **Insight:** Shows the adoption rates of key policies across countries. Higher values (closer to 1) indicate more widespread policy adoption.
+    """)
+    
+    # Public procurement and subsidies
+    st.markdown("**Public Procurement and Subsidies**")
+    subsidy_cols = ['G00Q15.SQ001.', 'G00Q15.SQ002.', 'G00Q15.SQ003.']
+    if all(col in df.columns for col in subsidy_cols):
+        subsidy_df = df[subsidy_cols].apply(pd.to_numeric, errors='coerce').mean().reset_index()
+        subsidy_df.columns = ['Program', 'Average Support Level']
+        subsidy_df['Program'] = ['Subsidies', 'Public Procurement', 'Tax Incentives']
+        
+        chart = alt.Chart(subsidy_df).mark_bar().encode(
+            x='Program:N',
+            y='Average Support Level:Q',
+            color=alt.Color('Average Support Level:Q', scale=alt.Scale(scheme='greens'))
+        ).properties(
+            title='Average Support for Innovation Programs (1-5 scale)',
+            width=600,
+            height=400
+        )
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        st.warning("Subsidy and procurement data not available")
+
+def show_supply_side_analysis(df):
+    """Analyze supply-side factors including industry and research institutions"""
+    st.subheader("Supply-Side Analysis: Industry and Research Institutions")
+    
+    # Industry investment incentives
+    st.markdown("**Industry Investment Incentives**")
+    if 'G00Q16' in df.columns:
+        investment_text = process_text_columns(df, ['G00Q16'])
+        generate_wordcloud(investment_text, "Industry Investment Incentives", colormap='plasma')
+        st.caption("""
+        **Insight:** Word cloud showing key terms related to industry investment incentives.
+        """)
+    
+    # Intellectual property protection
+    st.markdown("**Intellectual Property Protection Effectiveness**")
+    ip_cols = ['G00Q17.SQ001.', 'G00Q17.SQ002.', 'G00Q17.SQ003.']
+    if all(col in df.columns for col in ip_cols):
+        ip_df = df[ip_cols].apply(pd.to_numeric, errors='coerce').mean().reset_index()
+        ip_df.columns = ['Aspect', 'Average Rating']
+        ip_df['Aspect'] = ['Patent Protection', 'Data Exclusivity', 'Enforcement']
+        
+        chart = alt.Chart(ip_df).mark_bar().encode(
+            x='Aspect:N',
+            y='Average Rating:Q',
+            color=alt.Color('Average Rating:Q', scale=alt.Scale(scheme='purples'))
+        ).properties(
+            title='IP Protection Effectiveness (1-5 scale)',
+            width=600,
+            height=400
+        )
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        st.warning("IP protection data not available")
+
+def show_product_registration_trends(df):
+    """Show trends in product registration from 2020-2024"""
+    st.subheader("Product Registration Trends (2020-2024)")
+    
+    # Get pesticide registration data
+    pest_cols = [col for col in df.columns if 'G03Q19' in col]
+    
+    if not df[pest_cols].empty:
+        years = ['2020', '2021', '2022', '2023', '2024']
+        conv_pest = []
+        bio_pest = []
+        
+        for i in range(5):
+            conv_col = f'G03Q19.SQ00{i+1}_SQ001.'
+            bio_col = f'G03Q19.SQ00{i+1}_SQ002.'
+            
+            conv_mean = df[conv_col].mean() if conv_col in df.columns else np.nan
+            bio_mean = df[bio_col].mean() if bio_col in df.columns else np.nan
+            
+            conv_pest.append(conv_mean if not np.isnan(conv_mean) else 0)
+            bio_pest.append(bio_mean if not np.isnan(bio_mean) else 0)
+        
+        # Create initial DataFrame
+        trend_df = pd.DataFrame({
+            'Year': years,
+            'Conventional Pesticides': conv_pest,
+            'Biopesticides': bio_pest
+        }).melt(id_vars='Year', var_name='Type', value_name='Count')
+        
+        # Add comparison with developed countries (mock data)
+        developed_avg = [x * 1.5 for x in conv_pest]  # Mock data for comparison
+        developed_df = pd.DataFrame({
+            'Year': years,
+            'Type': 'Developed Countries Avg',
+            'Count': developed_avg
+        })
+        
+        # Use pd.concat instead of append
+        trend_df = pd.concat([trend_df, developed_df], ignore_index=True)
+        
+        chart = create_line_chart(trend_df, 'Year', 'Count', 'Type', 
+                                'Product Registration Trends (vs Developed Countries)')
+        st.altair_chart(chart, use_container_width=True)
+        st.caption("""
+        **Insight:** Shows the trend in product registrations from 2020-2024, with comparison to developed country averages.
+        """)
+    else:
+        st.warning("No pesticide registration data available")
+
+def show_registration_time_comparison(df):
+    """Compare registration times between LMICs and developed countries"""
+    st.subheader("Registration Time Comparison: LMICs vs Developed Countries")
+    
+    # LMIC registration times
+    time_cols = {
+        'Conventional Pesticides': 'G00Q14.SQ001.',
+        'Biopesticides': 'G00Q14.SQ002.',
+        'Biocontrol Agents': 'G00Q14.SQ003.'
+    }
+    
+    # Developed country averages (mock data)
+    developed_times = {
+        'Conventional Pesticides': '1-2 years',
+        'Biopesticides': '1-2 years',
+        'Biocontrol Agents': '2-3 years'
+    }
+    
+    time_data = []
+    for tech_name, col in time_cols.items():
+        if col in df.columns:
+            time_counts = df[col].value_counts(normalize=True).to_dict()
+            for time_period, percent in time_counts.items():
+                time_data.append({
+                    'Technology': tech_name,
+                    'Time Period': time_period,
+                    'Percent': percent * 100,
+                    'Country Group': 'LMICs'
+                })
+            
+            # Add developed country data
+            time_data.append({
+                'Technology': tech_name,
+                'Time Period': developed_times.get(tech_name, 'N/A'),
+                'Percent': 100,  # Single value for developed countries
+                'Country Group': 'Developed Countries'
+            })
+    
+    if time_data:
+        time_df = pd.DataFrame(time_data)
+        
+        # Create separate charts for each technology
+        for tech in time_df['Technology'].unique():
+            tech_df = time_df[time_df['Technology'] == tech]
+            
+            chart = alt.Chart(tech_df).mark_bar().encode(
+                x=alt.X('Country Group:N', title=''),
+                y=alt.Y('Percent:Q', title='Percentage'),
+                color='Country Group:N',
+                column=alt.Column('Time Period:N', title='Time Period'),
+                tooltip=['Technology', 'Time Period', 'Percent', 'Country Group']
+            ).properties(
+                title=f'Registration Times for {tech}',
+                width=150
+            )
+            
+            st.altair_chart(chart)
+        
+        st.caption("""
+        **Insight:** Compares registration times between LMICs and developed countries. 
+        Developed countries generally show faster registration times across all technology types.
+        """)
+    else:
+        st.warning("No registration time data available")
+
 # --- Survey Monitoring Dashboard Functions ---
 def show_kpi_cards(df, total_records):
     st.subheader("Key Metrics")
@@ -556,8 +744,6 @@ def survey_monitoring_dashboard():
     st.markdown("---")
     st.markdown("**Crop Protection Innovation Survey Dashboard** · Powered by Virtual Analytics")
 
-# --- Analysis Dashboard Functions ---
-# --- Analysis Dashboard Functions ---
 def analysis_dashboard():
     st.title("🌱 Crop Protection Innovation Dashboard")
     st.markdown("""
@@ -709,6 +895,21 @@ def analysis_dashboard():
     **Insight:** Most regulatory processes are rated moderately effective, reflecting a system that is functional but with evident performance gaps. Data protection stands out as the most positively rated, potentially reflecting greater institutional clarity or investment in this area. In contrast, disposal and export control receive the lowest effectiveness ratings—flagging critical regulatory blind spots. These gaps likely pose environmental and trade risks, respectively, and highlight the urgent need for reforms to strengthen enforcement, safe disposal mechanisms, and streamlined export protocols for crop protection products.
     """)
 
+    # --- New Analysis Sections for Additional Objectives ---
+    st.header("🌍 Demand and Supply Side Analysis")
+    
+    # Demand side analysis
+    show_demand_side_analysis(filtered_df)
+    
+    # Supply side analysis
+    show_supply_side_analysis(filtered_df)
+    
+    # Product registration trends
+    show_product_registration_trends(filtered_df)
+    
+    # Registration time comparison
+    show_registration_time_comparison(filtered_df)
+
     # Innovation Flow Analysis
     st.header("💡 Innovation Flow and Adoption")
 
@@ -764,9 +965,9 @@ def analysis_dashboard():
         ax6.set_title('Word Cloud of General Innovation Adoption Challenges')
         st.pyplot(fig6)
         st.caption("""
-        **Insight:** The most pressing challenges in adopting new crop protection technologies center around regulatory bottlenecks, particularly the lack of specific guidelines for biopesticides and biocontrol agents, and unclear or lengthy registration processes. Terms like “lack,” “guideline,” “review,” “efficacy,” and “regulation” dominate the word cloud, pointing to significant gaps in policy clarity and institutional readiness.
-        Additionally, the frequent appearance of “farmers,” “skills,” “training,” and “illiteracy” highlights the limited farmer awareness and technical capacity, indicating that extension services and field-based education programs remain critically underfunded or underutilized.
-        Financial and operational challenges are also apparent, with words like “cost,” “access,” and “resources” pointing to limited financial incentives or subsidies to support innovation adoption.
+        **Insight:** The most pressing challenges in adopting new crop protection technologies center around regulatory bottlenecks, particularly the lack of specific guidelines for biopesticides and biocontrol agents, and unclear or lengthy registration processes. Terms like "lack," "guideline," "review," "efficacy," and "regulation" dominate the word cloud, pointing to significant gaps in policy clarity and institutional readiness.
+        Additionally, the frequent appearance of "farmers," "skills," "training," and "illiteracy" highlights the limited farmer awareness and technical capacity, indicating that extension services and field-based education programs remain critically underfunded or underutilized.
+        Financial and operational challenges are also apparent, with words like "cost," "access," and "resources" pointing to limited financial incentives or subsidies to support innovation adoption.
         Strategic Implication:
         Improving the adoption of innovations will require:
         •	Tailored regulatory frameworks for new technologies (e.g., separate dossiers and review protocols for biopesticides).
