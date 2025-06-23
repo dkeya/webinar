@@ -13,3 +13,16 @@ matplotlib
 seaborn
 scikit-learn
 textblob
+streamlit
+pandas
+numpy
+folium
+streamlit-folium
+altair
+matplotlib
+wordcloud
+pillow
+plotly
+openpyxl
+folium
+
