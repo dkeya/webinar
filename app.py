@@ -622,27 +622,31 @@ def main():
             st.warning("No farmer data loaded. Please check your data file.")
             return
     
-        # Sidebar filters
+        # Sidebar filters - PERMANENTLY VISIBLE SECTION
         st.sidebar.title("Filters")
         
-        # Company filter
+        # Company filter - permanently expanded
+        st.sidebar.markdown("**Select Exporter**")
         companies = farmer_df['1.1 Company Name'].unique()
-        selected_company = st.sidebar.selectbox(
-            "Select Exporter",
+        selected_company = st.sidebar.radio(
+            "Exporter:",
             options=['All'] + list(companies),
-            index=0
+            index=0,
+            key="exporter_radio"
         )
         
-        # Date filter
+        # Date filter - permanently expanded
+        st.sidebar.markdown("**Select Date Range**")
         if not farmer_df['submitdate'].isna().all():
             min_date = farmer_df['submitdate'].min().date()
             max_date = farmer_df['submitdate'].max().date()
             
             date_range = st.sidebar.date_input(
-                "Select Date Range",
+                "Date range:",
                 value=[min_date, max_date],
                 min_value=min_date,
-                max_value=max_date
+                max_value=max_date,
+                key="date_range"
             )
         
         # Apply filters
@@ -656,7 +660,7 @@ def main():
                 (filtered_df['submitdate'].dt.date >= date_range[0]) & 
                 (filtered_df['submitdate'].dt.date <= date_range[1])
             ]
-        
+      
         # Dashboard sections
         show_overview(filtered_df, metrics_df)
         show_geospatial(filtered_df)
