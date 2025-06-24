@@ -38,6 +38,13 @@ hide_streamlit_style = """
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
+# --- Yield Reference Data ---
+YIELD_REFERENCE = {
+    '0-3': {'fruits': 275, 'kg': 45.8},
+    '4-7': {'fruits': 350, 'kg': 58.3},
+    '8+': {'fruits': 900, 'kg': 150.0}
+}
+
 # --- Data Loading Functions ---
 @st.cache_data(ttl=3600)
 def load_farmer_data():
@@ -61,14 +68,27 @@ def load_farmer_data():
         
         # Calculate yields for different age groups if columns exist
         age_groups = {
-            '0-3': '4.1 Average Yield per avocado Tree aged 0-3 years last season (kg)',
-            '4-7': '4.11 Average Yield per avocado Tree aged 4-7 years last season (kg)',
-            '8+': '4.12 Average Yield per avocado Tree aged 8+years last season (kg)'
+            '0-3': '4.8 Average No. of Fruits per avocado tree aged 0-3 years',
+            '4-7': '4.81 Average No. of Fruits per avocado tree aged 4-7 years',
+            '8+': '4.82 Average No. of Fruits per avocado tree aged 8+ years'
         }
         
         for age, col in age_groups.items():
             if col in df.columns:
-                df[f'Yield (kg/tree) {age} years'] = pd.to_numeric(df[col], errors='coerce')
+                df[f'Fruits per tree {age} years'] = pd.to_numeric(df[col], errors='coerce')
+                # Calculate kg based on reference data
+                df[f'Yield (kg/tree) {age} years'] = df[f'Fruits per tree {age} years'] * (YIELD_REFERENCE[age]['kg'] / YIELD_REFERENCE[age]['fruits'])
+        
+        # Handle price outliers for Hass variety
+        if '5.2 Average Selling Price of (Hass variety) per kg last Season (KSH)' in df.columns:
+            df['5.2 Average Selling Price of (Hass variety) per kg last Season (KSH)'] = pd.to_numeric(
+                df['5.2 Average Selling Price of (Hass variety) per kg last Season (KSH)'], errors='coerce')
+            df['5.2 Average Selling Price of (Hass variety) per kg last Season (KSH)'] = df['5.2 Average Selling Price of (Hass variety) per kg last Season (KSH)'].apply(
+                lambda x: x if x <= 120 else np.nan)
+        
+        # Merge loss reasons
+        if '4.31  Primary Cause of Loss last season' in df.columns and '4.32 Other Causes of Loss last season' in df.columns:
+            df['Combined Loss Reasons'] = df['4.31  Primary Cause of Loss last season'].fillna('') + '; ' + df['4.32 Other Causes of Loss last season'].fillna('')
         
         return df
     
@@ -167,29 +187,38 @@ def create_yield_comparison_chart(df):
         return None
     
     yield_data = []
-    age_groups = {
-        '0-3': '4.1 Average Yield per avocado Tree aged 0-3 years last season (kg)',
-        '4-7': '4.11 Average Yield per avocado Tree aged 4-7 years last season (kg)',
-        '8+': '4.12 Average Yield per avocado Tree aged 8+years last season (kg)'
-    }
+    age_groups = ['0-3', '4-7', '8+']
     
-    for age, col in age_groups.items():
-        if col in df.columns:
-            avg_yield = df[col].mean()
-            yield_data.append({'Age Group': f'{age} years', 'Average Yield (kg/tree)': avg_yield})
+    for age in age_groups:
+        fruits_col = f'Fruits per tree {age} years'
+        if fruits_col in df.columns:
+            avg_fruits = df[fruits_col].mean()
+            expected_fruits = YIELD_REFERENCE[age]['fruits']
+            yield_data.append({
+                'Age Group': f'{age} years',
+                'Average Fruits': avg_fruits,
+                'Expected Fruits': expected_fruits,
+                'Type': 'Actual'
+            })
+            yield_data.append({
+                'Age Group': f'{age} years',
+                'Average Fruits': expected_fruits,
+                'Expected Fruits': expected_fruits,
+                'Type': 'Expected'
+            })
     
     if not yield_data:
         return None
     
     yield_df = pd.DataFrame(yield_data)
     
-    chart = alt.Chart(yield_df).mark_bar().encode(
+    chart = alt.Chart(yield_df).mark_bar(opacity=0.7).encode(
         x='Age Group:N',
-        y='Average Yield (kg/tree):Q',
-        color=alt.Color('Age Group:N', scale=alt.Scale(scheme='blues')),
-        tooltip=['Age Group', 'Average Yield (kg/tree)']
+        y='Average Fruits:Q',
+        color=alt.Color('Type:N', scale=alt.Scale(range=['#1f77b4', '#ff7f0e'])),
+        tooltip=['Age Group', 'Average Fruits', 'Expected Fruits', 'Type']
     ).properties(
-        title='Average Yield by Tree Age',
+        title='Average Fruits per Tree (Actual vs Expected)',
         width=600,
         height=400
     )
@@ -434,26 +463,13 @@ def show_production_metrics(df):
     
     with tab3:
         # Post-harvest losses
-        if '4.3 Avocado Losses last season (kg)' in df.columns:
-            loss_reasons = {
-                'Bruising': '4.32 Other Causes of Loss last season/Bruising',
-                'Disease': '4.32 Other Causes of Loss last season/Disease',
-                'Poor Handling': '4.32 Other Causes of Loss last season/Poor Handling',
-                'Theft': '4.32 Other Causes of Loss last season/Theft'
-            }
+        if 'Combined Loss Reasons' in df.columns:
+            loss_reasons = df['Combined Loss Reasons'].str.split(';').explode().str.strip()
+            loss_reasons = loss_reasons[loss_reasons != ''].value_counts().reset_index()
+            loss_reasons.columns = ['Reason', 'Count']
             
-            loss_data = []
-            for reason, col in loss_reasons.items():
-                if col in df.columns:
-                    loss_data.append({
-                        'Reason': reason,
-                        'Count': df[col].sum()
-                    })
-            
-            if loss_data:
-                loss_df = pd.DataFrame(loss_data)
-                
-                loss_chart = alt.Chart(loss_df).mark_bar().encode(
+            if not loss_reasons.empty:
+                loss_chart = alt.Chart(loss_reasons).mark_bar().encode(
                     x='Count:Q',
                     y='Reason:N',
                     color='Reason:N',
@@ -512,6 +528,29 @@ def show_market_analysis(df):
             )
             
             st.altair_chart(income_chart)
+    
+    # Price analysis for Hass variety
+    if '5.2 Average Selling Price of (Hass variety) per kg last Season (KSH)' in df.columns:
+        st.subheader("Hass Avocado Price Analysis")
+        
+        # Remove outliers
+        hass_prices = df['5.2 Average Selling Price of (Hass variety) per kg last Season (KSH)'].dropna()
+        hass_prices = hass_prices[hass_prices <= 120]  # Remove prices above 120
+        
+        if not hass_prices.empty:
+            st.write(f"Average Price (outliers removed): Ksh {hass_prices.mean():.2f}")
+            
+            price_chart = alt.Chart(pd.DataFrame({'Price': hass_prices})).mark_bar().encode(
+                alt.X("Price:Q", bin=True),
+                y='count()',
+                tooltip=['count()']
+            ).properties(
+                title='Distribution of Hass Avocado Prices (Ksh/kg)',
+                width=600,
+                height=400
+            )
+            
+            st.altair_chart(price_chart)
     
     # Challenges word cloud
     if '5.10 Challenges in Market Access/Quality Standards' in df.columns:
