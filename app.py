@@ -911,7 +911,7 @@ def show_training_needs(df):
 # --- Advanced Analysis Section ---
 def show_advanced_analysis(df):
     """Show advanced analytical insights"""
-    st.header("🔍 Advanced Analytics")
+    st.header("🔍 Analysis")
     
     if df.empty:
         st.warning("No data available for advanced analysis")
@@ -1075,7 +1075,7 @@ def main():
         st.sidebar.title("Navigation")
         page = st.sidebar.radio(
             "Go to:",
-            ["📊 Monitoring Dashboard", "🔍 Advanced Analytics"]
+            ["📊 Monitoring Dashboard", "🔍 Analysis"]
         )
         
         # Sidebar filters - PERMANENTLY VISIBLE SECTION
