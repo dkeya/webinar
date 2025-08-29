@@ -10,6 +10,19 @@ import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 from PIL import Image
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from sklearn.cluster import KMeans
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, accuracy_score, classification_report
+from sklearn.linear_model import LinearRegression
+from sklearn.tree import DecisionTreeRegressor
+import seaborn as sns
+from scipy import stats
+import warnings
+warnings.filterwarnings('ignore')
 
 # Set page config
 st.set_page_config(
@@ -33,6 +46,14 @@ hide_streamlit_style = """
             padding: 15px;
             background-color: #f0f2f6;
             margin-bottom: 15px;
+        }
+        .analysis-card {
+            border-radius: 10px;
+            padding: 20px;
+            background-color: #ffffff;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #2ecc71;
         }
     </style>
 """
@@ -112,6 +133,214 @@ def load_exporter_metrics():
         st.warning(f"Couldn't load exporter metrics: {str(e)}")
         return pd.DataFrame()
 
+# --- Advanced Analysis Functions ---
+class ShapeAdvancedAnalytics:
+    def __init__(self, df):
+        self.df = df.copy()
+        self.scaler = StandardScaler()
+        self.le = LabelEncoder()
+        
+    def prepare_certification_data(self):
+        """Prepare data for certification prediction"""
+        if self.df.empty:
+            return None, None
+            
+        # Features for certification prediction
+        cert_features = [
+            '2.1 Total Farm Size (Acres)', '2.3 Number of Avocado Trees Planted',
+            '1.14 Experience in Avocado farming in years', '3.2 Are Good Agricultural Practices (GAP) applied in the orchard?',
+            '3.8  Is an Integrated Pest Management (IPM) program implemented?', '6.4 Use of Clean Harvesting Tools',
+            '6.5 Proper Disposal of Waste', '6.6 Compliance with Pesticide Withdrawal Period (REI/ PHI)',
+            '6.7 Use of Approved Pesticides Only', '6.8 Application of Correct Dosage'
+        ]
+        
+        # Target - GACC approval
+        if '1.26 General Administration of Customs of the Peoples Republic of China (GACC ) Approval Status' not in self.df.columns:
+            return None, None
+            
+        X = self.df[cert_features].copy()
+        y = self.df['1.26 General Administration of Customs of the Peoples Republic of China (GACC ) Approval Status']
+        
+        # Convert yes/no to binary
+        for col in X.columns:
+            if X[col].dtype == 'object':
+                X[col] = X[col].map({'Yes': 1, 'No': 0, 'Y': 1, 'N': 0}).fillna(0)
+        
+        y = y.map({'Yes': 1, 'No': 0, 'Y': 1, 'N': 0}).fillna(0)
+        
+        # Handle missing values
+        X = X.fillna(X.mean())
+        
+        return X, y
+    
+    def predict_certification_success(self):
+        """Predict certification success probability"""
+        X, y = self.prepare_certification_data()
+        if X is None or len(X) < 10:
+            return None
+            
+        # Train model
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+        
+        # Predict probabilities
+        y_pred_proba = model.predict_proba(X_test)[:, 1]
+        accuracy = accuracy_score(y_test, model.predict(X_test))
+        
+        return {
+            'model': model,
+            'features': X.columns.tolist(),
+            'feature_importance': dict(zip(X.columns, model.feature_importances_)),
+            'accuracy': accuracy,
+            'X_test': X_test,
+            'y_test': y_test,
+            'y_pred_proba': y_pred_proba
+        }
+    
+    def analyze_yield_drivers(self):
+        """Analyze key drivers of yield"""
+        if self.df.empty or '4.2 Total Harvest Last Season (kg)' not in self.df.columns:
+            return None
+            
+        yield_features = [
+            '2.1 Total Farm Size (Acres)', '2.3 Number of Avocado Trees Planted',
+            '1.14 Experience in Avocado farming in years', '3.3 Type of Fertilizer Used/Organic',
+            '3.3 Type of Fertilizer Used/Inorganic', '3.5 Irrigation Practices/Rainfed',
+            '3.5 Irrigation Practices/Drip', '3.5 Irrigation Practices/Sprinkler',
+            '3.4 Soil Conservation Measures Applied/Mulching', '3.4 Soil Conservation Measures Applied/Terracing'
+        ]
+        
+        X = self.df[yield_features].copy()
+        y = self.df['4.2 Total Harvest Last Season (kg)']
+        
+        # Handle missing values
+        X = X.fillna(X.mean())
+        y = y.fillna(y.mean())
+        
+        if len(X) < 10:
+            return None
+            
+        # Train model
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+        
+        y_pred = model.predict(X_test)
+        r2 = r2_score(y_test, y_pred)
+        
+        return {
+            'model': model,
+            'features': X.columns.tolist(),
+            'feature_importance': dict(zip(X.columns, model.feature_importances_)),
+            'r2_score': r2,
+            'X_test': X_test,
+            'y_test': y_test,
+            'y_pred': y_pred
+        }
+    
+    def segment_farmers(self):
+        """Segment farmers into clusters"""
+        if self.df.empty:
+            return None
+            
+        segmentation_features = [
+            '2.1 Total Farm Size (Acres)', '2.3 Number of Avocado Trees Planted',
+            '1.14 Experience in Avocado farming in years', '4.2 Total Harvest Last Season (kg)',
+            '5.3 Total Income from Avocado Sales (KSH last season)', '3.2 Are Good Agricultural Practices (GAP) applied in the orchard?'
+        ]
+        
+        X = self.df[segmentation_features].copy()
+        
+        # Convert categorical to numerical
+        for col in X.columns:
+            if X[col].dtype == 'object':
+                X[col] = X[col].map({'Yes': 1, 'No': 0, 'Y': 1, 'N': 0}).fillna(0)
+        
+        X = X.fillna(X.mean())
+        
+        if len(X) < 10:
+            return None
+            
+        # Scale data
+        X_scaled = self.scaler.fit_transform(X)
+        
+        # Perform clustering
+        kmeans = KMeans(n_clusters=4, random_state=42)
+        clusters = kmeans.fit_predict(X_scaled)
+        
+        return {
+            'clusters': clusters,
+            'centers': kmeans.cluster_centers_,
+            'features': X.columns.tolist(),
+            'cluster_labels': ['Small Traditional', 'Emerging Commercial', 'Established Commercial', 'High-Performance']
+        }
+    
+    def economic_analysis(self):
+        """Perform economic analysis"""
+        if self.df.empty or '5.3 Total Income from Avocado Sales (KSH last season)' not in self.df.columns:
+            return None
+        
+        # Calculate ROI metrics with better error handling
+        economic_data = self.df[['2.1 Total Farm Size (Acres)', '5.3 Total Income from Avocado Sales (KSH last season)']].copy()
+    
+        # Convert to numeric and handle non-numeric values
+        economic_data['2.1 Total Farm Size (Acres)'] = pd.to_numeric(economic_data['2.1 Total Farm Size (Acres)'], errors='coerce')
+        economic_data['5.3 Total Income from Avocado Sales (KSH last season)'] = pd.to_numeric(
+            economic_data['5.3 Total Income from Avocado Sales (KSH last season)'], errors='coerce')
+    
+        # Remove rows with missing values or zero farm size
+        economic_data = economic_data.dropna()
+        economic_data = economic_data[economic_data['2.1 Total Farm Size (Acres)'] > 0]
+    
+        if len(economic_data) < 5:
+            return None
+        
+        # Calculate income per acre with division by zero protection
+        economic_data['Income_per_Acre'] = (
+            economic_data['5.3 Total Income from Avocado Sales (KSH last season)'] / 
+            economic_data['2.1 Total Farm Size (Acres)']
+        )
+    
+        # Remove extreme outliers (top and bottom 1%)
+        q_low = economic_data['Income_per_Acre'].quantile(0.01)
+        q_hi = economic_data['Income_per_Acre'].quantile(0.99)
+        economic_data = economic_data[(economic_data['Income_per_Acre'] >= q_low) & 
+                                    (economic_data['Income_per_Acre'] <= q_hi)]
+    
+        if len(economic_data) < 5:
+            return None
+    
+        return {
+            'income_per_acre': economic_data['Income_per_Acre'],
+            'stats': {
+                'mean': economic_data['Income_per_Acre'].mean(),
+                'median': economic_data['Income_per_Acre'].median(),  # Fixed typo
+                'std': economic_data['Income_per_Acre'].std(),
+                'q1': economic_data['Income_per_Acre'].quantile(0.25),
+                'q3': economic_data['Income_per_Acre'].quantile(0.75)
+            }
+        }
+    
+    def correlation_analysis(self):
+        """Perform comprehensive correlation analysis"""
+        if self.df.empty:
+            return None
+            
+        # Select key numeric columns for correlation
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
+        important_cols = [col for col in numeric_cols if any(x in col for x in 
+                          ['Yield', 'Income', 'Trees', 'Size', 'Experience', 'Price'])]
+        
+        if len(important_cols) < 3:
+            important_cols = numeric_cols[:10]  # Fallback to first 10 numeric columns
+            
+        corr_data = self.df[important_cols].corr()
+        
+        return corr_data
+
 # --- Visualization Functions ---
 def create_farm_map(df):
     """Create interactive map of farms"""
@@ -182,7 +411,7 @@ def create_certification_chart(df):
     return chart
 
 def create_yield_comparison_chart(df):
-    """Create yield comparison by tree age"""
+    """Create yield comparison by tree age with true side-by-side bars"""
     if df.empty:
         return None
     
@@ -196,15 +425,13 @@ def create_yield_comparison_chart(df):
             expected_fruits = YIELD_REFERENCE[age]['fruits']
             yield_data.append({
                 'Age Group': f'{age} years',
-                'Average Fruits': avg_fruits,
-                'Expected Fruits': expected_fruits,
-                'Type': 'Actual'
+                'Value': avg_fruits,
+                'Category': 'Actual'
             })
             yield_data.append({
                 'Age Group': f'{age} years',
-                'Average Fruits': expected_fruits,
-                'Expected Fruits': expected_fruits,
-                'Type': 'Expected'
+                'Value': expected_fruits,
+                'Category': 'Expected'
             })
     
     if not yield_data:
@@ -212,15 +439,32 @@ def create_yield_comparison_chart(df):
     
     yield_df = pd.DataFrame(yield_data)
     
-    chart = alt.Chart(yield_df).mark_bar(opacity=0.7).encode(
-        x='Age Group:N',
-        y='Average Fruits:Q',
-        color=alt.Color('Type:N', scale=alt.Scale(range=['#1f77b4', '#ff7f0e'])),
-        tooltip=['Age Group', 'Average Fruits', 'Expected Fruits', 'Type']
+    # Create the chart with true side-by-side bars using position dodging
+    chart = alt.Chart(yield_df).mark_bar(
+        opacity=0.8,
+        stroke='black',
+        strokeWidth=0.5
+    ).encode(
+        x=alt.X('Category:N', title=None, 
+               axis=alt.Axis(labels=False, ticks=False),
+               scale=alt.Scale(paddingInner=0.2)),
+        y=alt.Y('Value:Q', title='Average Fruits per Tree'),
+        color=alt.Color('Category:N', 
+                      scale=alt.Scale(domain=['Actual', 'Expected'],
+                                    range=['#1f77b4', '#ff7f0e']),
+                      legend=alt.Legend(title="Measurement Type")),
+        column=alt.Column('Age Group:N', title='Tree Age Group',
+                        spacing=10),
+        tooltip=['Age Group', 'Category', 'Value']
     ).properties(
         title='Average Fruits per Tree (Actual vs Expected)',
-        width=600,
+        width=80,  # Width of each individual bar group
         height=400
+    ).configure_view(
+        stroke='transparent'
+    ).configure_axis(
+        labelFontSize=12,
+        titleFontSize=14
     )
     
     return chart
@@ -235,6 +479,61 @@ def create_wordcloud(text, title):
     ax.imshow(wordcloud, interpolation='bilinear')
     ax.set_title(title, fontsize=16, pad=20)
     ax.axis('off')
+    return fig
+
+# --- Advanced Analysis Visualization Functions ---
+def plot_feature_importance(importance_dict, title):
+    """Plot feature importance"""
+    importance_df = pd.DataFrame({
+        'Feature': list(importance_dict.keys()),
+        'Importance': list(importance_dict.values())
+    }).sort_values('Importance', ascending=False)
+    
+    fig = px.bar(importance_df, x='Importance', y='Feature', 
+                 title=title, orientation='h')
+    fig.update_layout(yaxis={'categoryorder':'total ascending'})
+    return fig
+
+def plot_cluster_profiles(cluster_results, df):
+    """Plot cluster profiles"""
+    if cluster_results is None:
+        return None
+        
+    # Create cluster profiles dataframe
+    profile_data = []
+    for i, label in enumerate(cluster_results['cluster_labels']):
+        profile_data.append({
+            'Cluster': label,
+            **{feat: cluster_results['centers'][i][j] for j, feat in enumerate(cluster_results['features'])}
+        })
+    
+    profile_df = pd.DataFrame(profile_data)
+    
+    # Create radar chart for cluster profiles
+    fig = go.Figure()
+    
+    for i, row in profile_df.iterrows():
+        fig.add_trace(go.Scatterpolar(
+            r=row[1:].values,
+            theta=row[1:].index,
+            fill='toself',
+            name=row['Cluster']
+        ))
+    
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True)),
+        title="Farmer Cluster Profiles",
+        showlegend=True
+    )
+    
+    return fig
+
+def plot_correlation_heatmap(corr_data, title):
+    """Plot correlation heatmap"""
+    fig = px.imshow(corr_data, 
+                   title=title,
+                   color_continuous_scale='RdBu_r',
+                   aspect="auto")
     return fig
 
 # --- Dashboard Sections ---
@@ -609,6 +908,156 @@ def show_training_needs(df):
             fig = create_wordcloud(suggestions, "Farmer Suggestions for Program Improvement")
             st.pyplot(fig)
 
+# --- Advanced Analysis Section ---
+def show_advanced_analysis(df):
+    """Show advanced analytical insights"""
+    st.header("🔍 Advanced Analytics")
+    
+    if df.empty:
+        st.warning("No data available for advanced analysis")
+        return
+    
+    # Initialize analytics engine
+    analytics = ShapeAdvancedAnalytics(df)
+    
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Predictive Analytics", 
+        "Farmer Segmentation", 
+        "Correlation Analysis",
+        "Economic Insights",
+        "Certification Optimization"
+    ])
+    
+    with tab1:
+        st.subheader("Yield Prediction & Drivers")
+        
+        # Yield drivers analysis
+        yield_analysis = analytics.analyze_yield_drivers()
+        if yield_analysis:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("Yield Prediction Accuracy (R²)", f"{yield_analysis['r2_score']:.3f}")
+                fig = plot_feature_importance(yield_analysis['feature_importance'], 
+                                           "Key Drivers of Avocado Yield")
+                st.plotly_chart(fig)
+            
+            with col2:
+                st.info("**Top Yield Drivers:**")
+                for feature, importance in sorted(yield_analysis['feature_importance'].items(), 
+                                               key=lambda x: x[1], reverse=True)[:5]:
+                    st.write(f"• {feature}: {importance:.3f}")
+        else:
+            st.warning("Insufficient data for yield prediction analysis")
+    
+    with tab2:
+        st.subheader("Farmer Segmentation Analysis")
+        
+        # Farmer clustering
+        segmentation = analytics.segment_farmers()
+        if segmentation:
+            # Add clusters to dataframe for display
+            df_segmented = df.copy()
+            df_segmented['Cluster'] = segmentation['clusters']
+            df_segmented['Cluster_Label'] = [segmentation['cluster_labels'][c] for c in segmentation['clusters']]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Cluster distribution
+                cluster_counts = df_segmented['Cluster_Label'].value_counts()
+                fig = px.pie(values=cluster_counts.values, names=cluster_counts.index,
+                           title="Farmer Cluster Distribution")
+                st.plotly_chart(fig)
+            
+            with col2:
+                # Cluster profiles
+                st.write("**Cluster Characteristics:**")
+                for i, label in enumerate(segmentation['cluster_labels']):
+                    st.write(f"**{label}:** {sum(segmentation['clusters'] == i)} farmers")
+            
+            # Detailed cluster analysis
+            st.subheader("Cluster Profiles Analysis")
+            fig = plot_cluster_profiles(segmentation, df)
+            if fig:
+                st.plotly_chart(fig)
+        else:
+            st.warning("Insufficient data for farmer segmentation")
+    
+    with tab3:
+        st.subheader("Correlation Analysis")
+        
+        # Comprehensive correlation analysis
+        corr_data = analytics.correlation_analysis()
+        if corr_data is not None:
+            fig = plot_correlation_heatmap(corr_data, "Correlation Matrix - Key Metrics")
+            st.plotly_chart(fig)
+            
+            # Highlight strong correlations
+            strong_corrs = []
+            for i in range(len(corr_data.columns)):
+                for j in range(i+1, len(corr_data.columns)):
+                    if abs(corr_data.iloc[i, j]) > 0.7:
+                        strong_corrs.append((corr_data.columns[i], corr_data.columns[j], corr_data.iloc[i, j]))
+            
+            if strong_corrs:
+                st.subheader("Strong Correlations Found")
+                for corr in strong_corrs[:5]:  # Show top 5
+                    st.write(f"**{corr[0]}** ↔ **{corr[1]}**: {corr[2]:.3f}")
+        else:
+            st.warning("Insufficient data for correlation analysis")
+    
+    with tab4:
+        st.subheader("Economic Analysis")
+        
+        # Economic analysis
+        economic_analysis = analytics.economic_analysis()
+        if economic_analysis:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Income distribution
+                fig = px.histogram(economic_analysis['income_per_acre'], 
+                                 title="Income per Acre Distribution",
+                                 labels={'value': 'Income per Acre (KSH)'})
+                st.plotly_chart(fig)
+            
+            with col2:
+                # Economic metrics
+                st.metric("Average Income per Acre", f"Ksh {economic_analysis['stats']['mean']:,.0f}")
+                st.metric("Median Income per Acre", f"Ksh {economic_analysis['stats']['median']:,.0f}")
+                st.metric("Income Variability (Std Dev)", f"Ksh {economic_analysis['stats']['std']:,.0f}")
+        else:
+            st.warning("Insufficient data for economic analysis")
+    
+    with tab5:
+        st.subheader("Certification Success Prediction")
+        
+        # Certification prediction
+        cert_prediction = analytics.predict_certification_success()
+        if cert_prediction:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric("Certification Prediction Accuracy", f"{cert_prediction['accuracy']:.3f}")
+                fig = plot_feature_importance(cert_prediction['feature_importance'],
+                                           "Key Drivers of Certification Success")
+                st.plotly_chart(fig)
+            
+            with col2:
+                st.info("**Top Certification Drivers:**")
+                for feature, importance in sorted(cert_prediction['feature_importance'].items(),
+                                               key=lambda x: x[1], reverse=True)[:5]:
+                    st.write(f"• {feature}: {importance:.3f}")
+                
+                # Success probability distribution
+                fig = px.histogram(cert_prediction['y_pred_proba'],
+                                 title="Certification Success Probability Distribution",
+                                 nbins=20)
+                st.plotly_chart(fig)
+        else:
+            st.warning("Insufficient data for certification prediction")
+
 def main():
     st.title("🥑 SHAPe Avocado Dashboard")
     st.markdown("Monitoring Kenya's avocado value chain for export excellence")
@@ -622,6 +1071,13 @@ def main():
             st.warning("No farmer data loaded. Please check your data file.")
             return
     
+        # Sidebar navigation
+        st.sidebar.title("Navigation")
+        page = st.sidebar.radio(
+            "Go to:",
+            ["📊 Monitoring Dashboard", "🔍 Advanced Analytics"]
+        )
+        
         # Sidebar filters - PERMANENTLY VISIBLE SECTION
         st.sidebar.title("Filters")
         
@@ -660,32 +1116,36 @@ def main():
                 (filtered_df['submitdate'].dt.date >= date_range[0]) & 
                 (filtered_df['submitdate'].dt.date <= date_range[1])
             ]
-      
-        # Dashboard sections
-        show_overview(filtered_df, metrics_df)
-        show_geospatial(filtered_df)
-        show_certification(filtered_df)
-        show_production_metrics(filtered_df)
-        show_market_analysis(filtered_df)
-        show_training_needs(filtered_df)
         
-        # Data explorer
-        st.subheader("Data Explorer")
-        if st.checkbox("Show raw data"):
-            st.dataframe(filtered_df)
-        
-        # Download button
-        @st.cache_data
-        def convert_df(df):
-            return df.to_csv(index=False).encode('utf-8')
-        
-        csv = convert_df(filtered_df)
-        st.download_button(
-            label="Download filtered data as CSV",
-            data=csv,
-            file_name='shape_filtered_data.csv',
-            mime='text/csv'
-        )
+        # Display selected page
+        if page == "📊 Monitoring Dashboard":
+            show_overview(filtered_df, metrics_df)
+            show_geospatial(filtered_df)
+            show_certification(filtered_df)
+            show_production_metrics(filtered_df)
+            show_market_analysis(filtered_df)
+            show_training_needs(filtered_df)
+            
+            # Data explorer
+            st.subheader("Data Explorer")
+            if st.checkbox("Show raw data"):
+                st.dataframe(filtered_df)
+            
+            # Download button
+            @st.cache_data
+            def convert_df(df):
+                return df.to_csv(index=False).encode('utf-8')
+            
+            csv = convert_df(filtered_df)
+            st.download_button(
+                label="Download filtered data as CSV",
+                data=csv,
+                file_name='shape_filtered_data.csv',
+                mime='text/csv'
+            )
+            
+        else:  # Advanced Analytics page
+            show_advanced_analysis(filtered_df)
 
     except Exception as e:
         st.error(f"An error occurred: {str(e)}")
