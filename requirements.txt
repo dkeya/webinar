@@ -1,28 +1,8 @@
-streamlit >= 1.40.1
-pandas>=2.0
-matplotlib
-numpy>=1.26.0
-streamlit-aggrid
-geopandas
-plotly
-openpyxl
-WordCloud
-streamlit
-pandas
-matplotlib
-seaborn
-scikit-learn
-textblob
-streamlit
-pandas
-numpy
-folium
-streamlit-folium
-altair
-matplotlib
-wordcloud
-pillow
-plotly
-openpyxl
-folium
+streamlit>=1.33
+pandas>=2.2
+numpy>=1.26
+altair>=5.2
+scikit-learn>=1.4
+xlsxwriter>=3.1
+
 
