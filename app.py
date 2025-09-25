@@ -619,19 +619,45 @@ colk2.write("**Use-cases – keywords:** " + (", ".join(kw_uc) if kw_uc else "No
 # =============================
 st.subheader("🎤 Quick notes")
 
-def topn(df_counts, n=5):
-    return ", ".join([f"{a} ({int(b)})" for a,b in df_counts.head(n).values])
+def topn_pct(df_counts, label_col, denom, n=5, decimals=0):
+    items = []
+    for _, row in df_counts.head(n).iterrows():
+        label = row[label_col]
+        count = int(row["count"])
+        pct = (count / denom * 100) if denom else 0
+        items.append(f"{label} ({count}, {pct:.{decimals}f}%)")
+    return items
+
+# Bases (after filters)
+n_total = len(f)
+n_ch_base = f["challenges_raw"].astype(str).str.strip().replace("", np.nan).notna().sum()
+n_uc_base = f["usecase_raw"].astype(str).str.strip().replace("", np.nan).notna().sum()
 
 points = []
-if not ch_freq.empty:
-    points.append(f"Top challenge themes: {topn(ch_freq, 5)}.")
-if not uc_freq.empty:
-    points.append(f"Top use-case themes: {topn(uc_freq, 5)}.")
-if 'sector_counts' in locals() and not sector_counts.empty:
+
+# 1) Challenges (percent of respondents who answered the challenges question)
+if not ch_freq.empty and n_ch_base > 0:
+    top_ch_txt = ", ".join(topn_pct(ch_freq, "theme", n_ch_base, n=5))
+    points.append(f"Top challenge themes: {top_ch_txt}.  _(base: {n_ch_base} responses)_")
+
+# 2) Use-cases (percent of respondents who answered the use-case question)
+if not uc_freq.empty and n_uc_base > 0:
+    top_uc_txt = ", ".join(topn_pct(uc_freq, "use_case", n_uc_base, n=5))
+    points.append(f"Top use-case themes: {top_uc_txt}.  _(base: {n_uc_base} responses)_")
+
+# 3) Most represented sector (percent of all filtered respondents)
+if 'sector_counts' in locals() and not sector_counts.empty and n_total > 0:
     lead_sector = sector_counts.sort_values('count', ascending=False).iloc[0]
-    points.append(f"Most represented sector: {lead_sector['sector']} ({int(lead_sector['count'])}).")
-if 'top_orgs' in locals() and not top_orgs.empty:
-    points.append(f"Top participating org (by sign-ups): {top_orgs.iloc[0]['organization']} ({int(top_orgs.iloc[0]['count'])}).")
+    lead_pct = lead_sector['count'] / n_total * 100
+    points.append(f"Most represented sector: {lead_sector['sector']} ({int(lead_sector['count'])}, {lead_pct:.0f}%).  _(base: {n_total})_")
+
+# 4) Top participating org (percent of all filtered respondents)
+if 'top_orgs' in locals() and not top_orgs.empty and n_total > 0:
+    top_org = top_orgs.iloc[0]
+    org_pct = top_org['count'] / n_total * 100
+    points.append(f"Top participating org (by sign-ups): {top_org['organization']} ({int(top_org['count'])}, {org_pct:.0f}%).  _(base: {n_total})_")
+
+# 5) Latest registration (unchanged)
 if f['time'].notna().any():
     points.append(f"Latest registration: {f['time'].max().strftime('%b %d, %Y %H:%M')}.")
 
